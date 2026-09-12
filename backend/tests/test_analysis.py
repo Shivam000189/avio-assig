@@ -238,3 +238,51 @@ async def test_model_routing_tiers_enforced() -> None:
     assert captured_models[4] == MODEL_FAST
     assert captured_models[5] == MODEL_REASONING
     assert captured_models[6] == MODEL_REASONING
+
+
+@pytest.mark.anyio
+async def test_complaint_chat_returns_grounded_response() -> None:
+    """The complaint chat endpoint returns the single Groq response."""
+    mock_llm = MagicMock()
+    with (
+        patch("app.routers.analysis.get_llm", return_value=mock_llm) as mock_get_llm,
+        patch("app.routers.analysis.invoke_llm_with_retry", new_callable=AsyncMock) as mock_invoke,
+    ):
+        mock_invoke.return_value = AIMessage(content="The complaint is classified as Major.")
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/v1/complaints/chat",
+                json={
+                    "message": "What is the current severity?",
+                    "complaint_context": {
+                        "severity": "Major",
+                        "productName": "Paracetamol 500mg Tablets",
+                    },
+                },
+            )
+
+    assert response.status_code == 200
+    assert response.json() == {"response": "The complaint is classified as Major."}
+    mock_get_llm.assert_called_once_with(model=MODEL_FAST, temperature=0.3)
+    mock_invoke.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_complaint_chat_returns_502_when_groq_unavailable() -> None:
+    """The complaint chat endpoint translates Groq outages to a clean 502."""
+    with (
+        patch("app.routers.analysis.get_llm", side_effect=GroqUnavailableError("offline")),
+    ):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/v1/complaints/chat",
+                json={
+                    "message": "Summarize this complaint.",
+                    "complaint_context": {"summary": "Tablet chipping reported."},
+                },
+            )
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == "AI service unavailable"

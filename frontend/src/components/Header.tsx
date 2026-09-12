@@ -1,19 +1,12 @@
 import React from 'react';
 import { BarChart3, FileText, PlusCircle, ShieldCheck } from 'lucide-react';
+import { useAppDispatch, useAppSelector } from '../store/hooks';
+import { setActiveTab } from '../store/slices/uiSlice';
 
-interface HeaderProps {
-  activeTab: 'log' | 'list' | 'analytics';
-  setActiveTab: (tab: 'log' | 'list' | 'analytics') => void;
-  systemStatus: 'connected' | 'checking' | 'error';
-  openComplaintsCount?: number;
-}
-
-export const Header: React.FC<HeaderProps> = ({
-  activeTab,
-  setActiveTab,
-  systemStatus,
-  openComplaintsCount,
-}) => {
+export const Header: React.FC = () => {
+  const dispatch = useAppDispatch();
+  const { activeTab, systemStatus } = useAppSelector((state) => state.ui);
+  const setTab = (tab: 'log' | 'list' | 'analytics') => dispatch(setActiveTab(tab));
   return (
     <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/80 shadow-xs">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -41,7 +34,7 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Navigation Tabs */}
           <nav className="flex items-center space-x-1 bg-slate-100/90 p-1 rounded-xl border border-slate-200/60">
             <button
-              onClick={() => setActiveTab('log')}
+              onClick={() => setTab('log')}
               className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                 activeTab === 'log'
                   ? 'bg-white text-blue-700 shadow-xs'
@@ -53,7 +46,7 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
 
             <button
-              onClick={() => setActiveTab('list')}
+              onClick={() => setTab('list')}
               className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                 activeTab === 'list'
                   ? 'bg-white text-blue-700 shadow-xs'
@@ -62,15 +55,10 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <FileText className="w-3.5 h-3.5" />
               <span>Complaints Directory</span>
-              {openComplaintsCount !== undefined && openComplaintsCount > 0 && (
-                <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
-                  {openComplaintsCount}
-                </span>
-              )}
             </button>
 
             <button
-              onClick={() => setActiveTab('analytics')}
+              onClick={() => setTab('analytics')}
               className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                 activeTab === 'analytics'
                   ? 'bg-white text-blue-700 shadow-xs'

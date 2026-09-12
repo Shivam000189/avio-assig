@@ -80,6 +80,7 @@ All endpoints are mounted under the `/api/v1` prefix.
 | **GET** | `/health` | — | None | `200` | Application health and version check |
 | **GET** | `/health/db` | — | None | `200`, `503` | Live PostgreSQL connection health check |
 | **POST** | `/complaints/analyze` | `application/json` | `{"text": "...", "source": "Manual"}` | `200`, `422`, `502` | **LangGraph AI Pipeline**: Extracts entities, checks completeness, classifies risk/severity, drafts QA summary, recommends CAPA, and hypothesizes root cause |
+| **POST** | `/complaints/chat` | `application/json` | `{"message": "...", "complaint_context": {...}}` | `200`, `422`, `502` | Grounded single-question assistant using the fast Groq model |
 | **POST** | `/complaints/analyze-file` | `multipart/form-data` | `file`: `.pdf` / `.txt` / `.eml`<br>`complaint_id` (optional str) | `200`, `413`, `422`, `502` | **Document Upload & AI Triage**: Sniffs content magic bytes, parses text via `pypdf`/email parsers, runs LangGraph pipeline, and optionally attaches document |
 | **POST** | `/complaints/from-analysis` | `application/json` | `CreateFromAnalysisRequest` | `201`, `400`, `422`, `500` | **Saved-Complaint Pipeline Bridge**: Atomically commits approved AI analysis as `Complaint` + `ComplaintSummary` + `CAPA` in a single ACID transaction |
 | **GET** | `/complaints/stats` | — | None | `200`, `503` | Aggregate metrics (totals, by status, by severity, open by type) |
@@ -146,7 +147,7 @@ curl -X POST "http://localhost:8000/api/v1/complaints/analyze-file" \
              │
              ▼
  ┌────────────────────────┐
- │ LangGraph AI Engine    │  6-Node Sequential Pipeline
+ │ LangGraph AI Engine    │  7-Node Sequential Pipeline
  │ (Gemma-2 & LLaMA-3.3)  │  (Entity, Completeness, Risk, Summary, CAPA, Root Cause)
  └───────────┬────────────┘
              │
@@ -207,7 +208,7 @@ backend/
 │   │   ├── llm.py                  # ChatGroq client factory + tenacity retry
 │   │   ├── state.py                # ComplaintAnalysisState TypedDict
 │   │   ├── utils.py                # JSON parsing & self-healing node runner
-│   │   ├── graph.py                # 6-node StateGraph + warm compilation
+│   │   ├── graph.py                # 7-node StateGraph + warm compilation
 │   │   └── prompts/                # Individual node system prompts
 │   ├── routers/
 │   │   ├── health.py               # Health & DB ping routes
@@ -250,3 +251,9 @@ backend/
 ├── requirements.txt
 └── README.md
 ```
+
+## Known Limitations / Not Implemented
+
+- Authentication, authorization, and tenant isolation are out of scope for this assignment.
+- PDF ingestion extracts embedded text; production OCR for scanned/image-only documents is not implemented.
+- The application is designed as a single-tenant local/demo deployment and does not include background job workers for long-running analysis.

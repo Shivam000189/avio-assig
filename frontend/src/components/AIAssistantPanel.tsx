@@ -9,29 +9,16 @@ import {
   UploadCloud,
   X,
 } from 'lucide-react';
-import type { AnalysisResponse } from '../api/types';
+import { useAppDispatch, useAppSelector } from '../store/hooks';
+import { resetComplaintForm, setAnalysisData, setAnalyzing, setProgress, setUploadedFileName } from '../store/slices/complaintFormSlice';
+import { setPasteModalOpen, setToastMessage } from '../store/slices/uiSlice';
+import { useAnalyzeFileMutation, useChatMutation } from '../store/api/complaintsApi';
 
-interface AIAssistantPanelProps {
-  onFileUpload: (file: File) => Promise<void>;
-  onOpenPasteModal: () => void;
-  isAnalyzing: boolean;
-  progressPercent: number;
-  progressStepText: string;
-  analysisData: AnalysisResponse | null;
-  uploadedFileName: string | null;
-  onClearUploadedFile: () => void;
-}
-
-export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
-  onFileUpload,
-  onOpenPasteModal,
-  isAnalyzing,
-  progressPercent,
-  progressStepText,
-  analysisData,
-  uploadedFileName,
-  onClearUploadedFile,
-}) => {
+export const AIAssistantPanel: React.FC = () => {
+  const dispatch = useAppDispatch();
+  const { analysisData, isAnalyzing, progressPercent, progressStepText, uploadedFileName } = useAppSelector((state) => state.complaintForm);
+  const [analyzeFile] = useAnalyzeFileMutation();
+  const [chat] = useChatMutation();
   const [isDragOver, setIsDragOver] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [chatMessages, setChatMessages] = useState<
@@ -43,6 +30,35 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     },
   ]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const runProgressAnimation = () => {
+    dispatch(setProgress({ percent: 10, text: 'Extracting entities & batch coordinates...' }));
+    const timers = [
+      window.setTimeout(() => dispatch(setProgress({ percent: 35, text: 'Querying database for potential duplicate batch signals...' })), 400),
+      window.setTimeout(() => dispatch(setProgress({ percent: 65, text: 'Evaluating completeness & assessing risk classification...' })), 900),
+      window.setTimeout(() => dispatch(setProgress({ percent: 85, text: 'Synthesizing executive summary & CAPA recommendations...' })), 1400),
+    ];
+    return () => timers.forEach(window.clearTimeout);
+  };
+
+  const handleFileUpload = async (file: File) => {
+    dispatch(setAnalyzing(true));
+    dispatch(setUploadedFileName(file.name));
+    const cancelAnimation = runProgressAnimation();
+    try {
+      const analysis = await analyzeFile({ file }).unwrap();
+      cancelAnimation();
+      dispatch(setProgress({ percent: 100, text: 'Analysis complete. Form populated successfully.' }));
+      dispatch(setAnalysisData(analysis));
+      dispatch(setToastMessage({ text: `Extracted details from ${file.name}. Review and confirm details.`, type: 'success' }));
+    } catch (error) {
+      cancelAnimation();
+      dispatch(setProgress({ percent: 0, text: '' }));
+      dispatch(setToastMessage({ text: getErrorMessage(error, 'File analysis failed. Please verify format and content.'), type: 'error' }));
+    } finally {
+      dispatch(setAnalyzing(false));
+    }
+  };
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -58,14 +74,14 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     setIsDragOver(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const file = e.dataTransfer.files[0];
-      onFileUpload(file);
+      handleFileUpload(file);
     }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const file = e.target.files[0];
-      onFileUpload(file);
+      handleFileUpload(file);
       e.target.value = '';
     }
   };
@@ -78,41 +94,21 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     setChatMessages((prev) => [...prev, { sender: 'user', text: userText }]);
     setChatInput('');
 
-    // Dynamic QMS AI responses based on complaint context
-    setTimeout(() => {
-      let botResponse = '';
-      const lower = userText.toLowerCase();
-
-      if (lower.includes('duplicate') || lower.includes('trend')) {
-        if (analysisData?.potentialDuplicate) {
-          botResponse = `This complaint is flagged with ${analysisData.potentialDuplicate.similarity} similarity to ${
-            analysisData.potentialDuplicate.complaintNumber || 'an existing record'
-          }: ${analysisData.potentialDuplicate.explanation}`;
-        } else {
-          botResponse =
-            'No direct duplicates or matching batch issues were detected in the database for this record.';
-        }
-      } else if (lower.includes('severity') || lower.includes('risk')) {
-        botResponse = `Assessed Severity: ${analysisData?.severity || 'Major'}. Reasoning: ${
-          analysisData?.riskReasoning || 'Assessed based on patient safety, defect class, and regulatory reporting SLA.'
-        }`;
-      } else if (lower.includes('capa') || lower.includes('action')) {
-        botResponse = `Recommended CAPA (${analysisData?.capaActionType || 'Corrective'}): ${
-          analysisData?.capaRecommendation || 'Verify tooling calibration and initiate batch containment hold.'
-        }`;
-      } else if (lower.includes('root cause') || lower.includes('cause')) {
-        botResponse = `Hypothesized Root Cause: ${
-          analysisData?.rootCause || 'Underlying defect mechanism under investigation.'
-        }`;
-      } else if (analysisData?.summary) {
-        botResponse = `Complaint Summary: ${analysisData.summary}`;
-      } else {
-        botResponse =
-          'I am your AI Intake Assistant. Once you upload a document or paste text, I evaluate batch trends, root cause hypotheses, and CAPA recommendations per 21 CFR Part 820.';
-      }
-
-      setChatMessages((prev) => [...prev, { sender: 'bot', text: botResponse }]);
-    }, 600);
+    void chat({
+      message: userText,
+      complaintContext: analysisData || {
+        rawInput: '',
+        source: 'Manual',
+        extracted: null,
+        missingFields: [],
+        isComplete: false,
+        duplicateChecked: false,
+        warnings: [],
+      },
+    })
+      .unwrap()
+      .then(({ response }) => setChatMessages((prev) => [...prev, { sender: 'bot', text: response }]))
+      .catch((error) => setChatMessages((prev) => [...prev, { sender: 'bot', text: getErrorMessage(error, 'I could not reach the AI assistant. Please verify the backend and GROQ_API_KEY.') }]));
   };
 
   return (
@@ -172,7 +168,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    onClearUploadedFile();
+                    dispatch(resetComplaintForm());
                   }}
                   className="p-0.5 hover:bg-emerald-100 rounded text-slate-400 hover:text-slate-700"
                 >
@@ -194,7 +190,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
           {/* Paste Button */}
           <button
             type="button"
-            onClick={onOpenPasteModal}
+            onClick={() => dispatch(setPasteModalOpen(true))}
             className="w-full flex items-center justify-center space-x-2 py-2.5 px-4 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-2xs transition-colors cursor-pointer"
           >
             <FileText className="w-4 h-4 text-slate-500" />
@@ -301,3 +297,11 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     </div>
   );
 };
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (typeof error === 'object' && error !== null && 'data' in error) {
+    const data = (error as { data?: { detail?: string; message?: string } }).data;
+    return data?.detail || data?.message || fallback;
+  }
+  return fallback;
+}

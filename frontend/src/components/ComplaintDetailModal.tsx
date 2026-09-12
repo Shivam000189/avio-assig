@@ -6,21 +6,17 @@ import {
   Sparkles,
   X,
 } from 'lucide-react';
-import { api } from '../api/client';
 import type { Complaint } from '../api/types';
 import { formatDate, formatDateTime, getSeverityBadgeColor, getStatusBadgeColor } from '../utils/formatters';
+import { useAppDispatch, useAppSelector } from '../store/hooks';
+import { setSelectedComplaint } from '../store/slices/uiSlice';
+import { useGenerateAiInsightsMutation, useUpdateComplaintMutation } from '../store/api/complaintsApi';
 
-interface ComplaintDetailModalProps {
-  complaint: Complaint | null;
-  onClose: () => void;
-  onUpdate: () => void;
-}
-
-export const ComplaintDetailModal: React.FC<ComplaintDetailModalProps> = ({
-  complaint,
-  onClose,
-  onUpdate,
-}) => {
+export const ComplaintDetailModal: React.FC = () => {
+  const dispatch = useAppDispatch();
+  const complaint = useAppSelector((state) => state.ui.selectedComplaint);
+  const [generateAiInsights] = useGenerateAiInsightsMutation();
+  const [updateComplaint] = useUpdateComplaintMutation();
   const [current, setCurrent] = useState<Complaint | null>(complaint);
   const [isRunningAi, setIsRunningAi] = useState(false);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
@@ -40,10 +36,10 @@ export const ComplaintDetailModal: React.FC<ComplaintDetailModalProps> = ({
     try {
       setIsRunningAi(true);
       setAiMessage(null);
-      const updated = await api.generateAiInsights(current.id);
+      const updated = await generateAiInsights(current.id).unwrap();
       setCurrent(updated);
+      dispatch(setSelectedComplaint(updated));
       setAiMessage('AI Insights successfully generated and synchronized with database.');
-      onUpdate();
     } catch (err: any) {
       setAiMessage(err.message || 'Failed to generate AI insights.');
     } finally {
@@ -54,9 +50,9 @@ export const ComplaintDetailModal: React.FC<ComplaintDetailModalProps> = ({
   const handleStatusChange = async (newStatus: string) => {
     try {
       setIsUpdatingStatus(true);
-      const updated = await api.updateComplaint(current.id, { status: newStatus });
+      const updated = await updateComplaint({ id: current.id, payload: { status: newStatus } }).unwrap();
       setCurrent(updated);
-      onUpdate();
+      dispatch(setSelectedComplaint(updated));
     } catch (err) {
       console.error('Failed to update status', err);
     } finally {
@@ -88,7 +84,7 @@ export const ComplaintDetailModal: React.FC<ComplaintDetailModalProps> = ({
 
           <div className="flex items-center space-x-2">
             <button
-              onClick={onClose}
+              onClick={() => dispatch(setSelectedComplaint(null))}
               className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
             >
               <X className="w-5 h-5" />
@@ -287,7 +283,7 @@ export const ComplaintDetailModal: React.FC<ComplaintDetailModalProps> = ({
 
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => dispatch(setSelectedComplaint(null))}
             className="px-5 py-2 rounded-xl border border-slate-200 text-slate-700 text-xs font-semibold hover:bg-white transition-colors"
           >
             Close Viewer

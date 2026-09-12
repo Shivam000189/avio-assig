@@ -131,3 +131,18 @@ class CreateFromAnalysisRequest(BaseModel):
         return value
 
     model_config = ConfigDict(extra="forbid")
+
+
+class ComplaintChatRequest(BaseModel):
+    """Request for a grounded question about a complaint or analysis result."""
+
+    message: str = Field(..., min_length=1, max_length=2000)
+    complaint_context: dict[str, Any]
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ComplaintChatResponse(BaseModel):
+    """Assistant response for a grounded complaint question."""
+
+    response: str

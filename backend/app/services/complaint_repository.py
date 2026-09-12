@@ -17,7 +17,7 @@ In Phase 4, the LangGraph AI triage pipeline hooks into this layer:
 
 from datetime import datetime, timezone
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Mapping
 
 if TYPE_CHECKING:
     from prisma.models import CAPA, Complaint, ComplaintDocument
@@ -409,7 +409,7 @@ async def upsert_capa_for_complaint(
 
 async def apply_ai_insights_to_complaint(
     complaint_id: str,
-    state: dict[str, Any],
+    state: Mapping[str, Any],
 ) -> Complaint:
     """Apply LangGraph AI analysis predictions to an existing complaint record.
 

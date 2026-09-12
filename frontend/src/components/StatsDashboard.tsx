@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import {
   AlertOctagon,
   AlertTriangle,
@@ -8,28 +8,10 @@ import {
   RefreshCw,
   ShieldAlert,
 } from 'lucide-react';
-import { api } from '../api/client';
-import type { ComplaintStatsResponse } from '../api/types';
+import { useGetStatsQuery } from '../store/api/complaintsApi';
 
 export const StatsDashboard: React.FC = () => {
-  const [stats, setStats] = useState<ComplaintStatsResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  const fetchStats = async () => {
-    try {
-      setLoading(true);
-      const data = await api.getStats();
-      setStats(data);
-    } catch (err) {
-      console.error('Failed to load stats', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchStats();
-  }, []);
+  const { data: stats, isLoading: loading } = useGetStatsQuery();
 
   if (loading) {
     return (

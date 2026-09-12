@@ -1,12 +1,9 @@
 import React, { useState } from 'react';
 import { FileText, Loader2, Sparkles, X } from 'lucide-react';
-
-interface PasteTextModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onSubmitText: (text: string) => Promise<void>;
-  isAnalyzing: boolean;
-}
+import { useAppDispatch, useAppSelector } from '../store/hooks';
+import { setAnalysisData, setAnalyzing, setProgress, setUploadedFileName } from '../store/slices/complaintFormSlice';
+import { setPasteModalOpen, setToastMessage } from '../store/slices/uiSlice';
+import { useAnalyzeTextMutation } from '../store/api/complaintsApi';
 
 const SAMPLE_PRESETS = [
   {
@@ -35,22 +32,37 @@ Patient developed severe acute urticarial skin rash, facial angioedema, and mild
   },
 ];
 
-export const PasteTextModal: React.FC<PasteTextModalProps> = ({
-  isOpen,
-  onClose,
-  onSubmitText,
-  isAnalyzing,
-}) => {
+export const PasteTextModal: React.FC = () => {
+  const dispatch = useAppDispatch();
+  const { isPasteModalOpen: isOpen } = useAppSelector((state) => state.ui);
+  const { isAnalyzing } = useAppSelector((state) => state.complaintForm);
+  const [analyzeText] = useAnalyzeTextMutation();
   const [text, setText] = useState('');
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (text.trim().length >= 30) {
-      onSubmitText(text.trim());
+      dispatch(setAnalyzing(true));
+      dispatch(setUploadedFileName('Pasted Narrative'));
+      dispatch(setPasteModalOpen(false));
+      dispatch(setProgress({ percent: 10, text: 'Extracting entities & batch coordinates...' }));
+      try {
+        const analysis = await analyzeText({ text: text.trim(), source: 'Manual' }).unwrap();
+        dispatch(setProgress({ percent: 100, text: 'Analysis complete. Form populated successfully.' }));
+        dispatch(setAnalysisData(analysis));
+        dispatch(setToastMessage({ text: 'Complaint text analyzed successfully.', type: 'success' }));
+      } catch (error) {
+        dispatch(setProgress({ percent: 0, text: '' }));
+        dispatch(setToastMessage({ text: getErrorMessage(error), type: 'error' }));
+      } finally {
+        dispatch(setAnalyzing(false));
+      }
     }
   };
+
+  const close = () => dispatch(setPasteModalOpen(false));
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-fade-in">
@@ -71,7 +83,7 @@ export const PasteTextModal: React.FC<PasteTextModalProps> = ({
             </div>
           </div>
           <button
-            onClick={onClose}
+            onClick={close}
             className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
           >
             <X className="w-4 h-4" />
@@ -122,7 +134,7 @@ export const PasteTextModal: React.FC<PasteTextModalProps> = ({
             <div className="flex items-center space-x-2.5">
               <button
                 type="button"
-                onClick={onClose}
+                onClick={close}
                 className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-semibold hover:bg-slate-50"
               >
                 Cancel
@@ -147,3 +159,11 @@ export const PasteTextModal: React.FC<PasteTextModalProps> = ({
     </div>
   );
 };
+
+function getErrorMessage(error: unknown): string {
+  if (typeof error === 'object' && error !== null && 'data' in error) {
+    const data = (error as { data?: { detail?: string; message?: string } }).data;
+    return data?.detail || data?.message || 'Text analysis failed. Please ensure at least 30 characters.';
+  }
+  return 'Text analysis failed. Please ensure at least 30 characters.';
+}

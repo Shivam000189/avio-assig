@@ -14,9 +14,12 @@ MUST all be registered in `main.py` BEFORE `complaints_router` (which contains
 """
 
 import logging
+import json
 import os
 import time
 from typing import Annotated
+
+from langchain_core.messages import HumanMessage, SystemMessage
 
 from fastapi import (
     APIRouter,
@@ -30,11 +33,14 @@ from fastapi import (
 )
 
 from app.config import settings
+from app.agent.llm import MODEL_FAST, get_llm, invoke_llm_with_retry
 from app.database import prisma
 from app.exceptions import FileParseError, GroqUnavailableError, NotFoundError
 from app.schemas.analysis import (
     AnalysisRequest,
     AnalysisResponse,
+    ComplaintChatRequest,
+    ComplaintChatResponse,
     CreateFromAnalysisRequest,
     DocumentMetadata,
     PotentialDuplicateInfo,
@@ -69,6 +75,44 @@ async def require_db_connection() -> None:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Database service is currently unavailable.",
         )
+
+
+@router.post(
+    "/chat",
+    response_model=ComplaintChatResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Ask the complaint AI assistant",
+    description="Answer a question using the supplied complaint or analysis context with a single grounded Groq call.",
+)
+@limiter.limit(lambda: settings.rate_limit_ai_analysis)
+async def chat_about_complaint(
+    request: Request,
+    payload: ComplaintChatRequest,
+) -> ComplaintChatResponse:
+    """Answer a user question grounded in the active complaint context."""
+    system_prompt = (
+        "You are a pharmaceutical complaint quality assistant. Answer the user's question "
+        "using only the supplied complaint context. Be concise, factual, and explicit when "
+        "the context does not contain enough information. Do not invent patient, batch, "
+        "regulatory, or investigation facts. Treat CAPA and root cause as recommendations "
+        "or hypotheses, not confirmed facts.\n\n"
+        f"Complaint context:\n{json.dumps(payload.complaint_context, indent=2, default=str)}"
+    )
+    try:
+        llm = get_llm(model=MODEL_FAST, temperature=0.3)
+        result = await invoke_llm_with_retry(
+            llm,
+            [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=payload.message),
+            ],
+        )
+    except GroqUnavailableError as exc:
+        logger.error("AI chat service failure: %s", exc)
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="AI service unavailable")
+
+    response_text = getattr(result, "content", str(result)).strip()
+    return ComplaintChatResponse(response=response_text)
 
 
 # ==============================================================================

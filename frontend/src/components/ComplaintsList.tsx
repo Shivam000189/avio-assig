@@ -6,55 +6,26 @@ import {
   RefreshCw,
   Search,
 } from 'lucide-react';
-import { api } from '../api/client';
-import type { Complaint } from '../api/types';
 import { formatDate, getSeverityBadgeColor, getStatusBadgeColor } from '../utils/formatters';
+import { useAppDispatch, useAppSelector } from '../store/hooks';
+import { setFilter, setPage, setComplaints } from '../store/slices/complaintsSlice';
+import { setSelectedComplaint } from '../store/slices/uiSlice';
+import { useGetComplaintsQuery } from '../store/api/complaintsApi';
 
-interface ComplaintsListProps {
-  onSelectComplaint: (complaint: Complaint) => void;
-  onRefreshTrigger?: number;
-}
-
-export const ComplaintsList: React.FC<ComplaintsListProps> = ({
-  onSelectComplaint,
-  onRefreshTrigger = 0,
-}) => {
-  const [complaints, setComplaints] = useState<Complaint[]>([]);
-  const [total, setTotal] = useState(0);
+export const ComplaintsList: React.FC = () => {
+  const dispatch = useAppDispatch();
+  const { items: complaints, total, page, limit, filters, refreshTrigger } = useAppSelector((state) => state.complaints);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [severityFilter, setSeverityFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
-  const [page, setPage] = useState(0);
-  const limit = 10;
-
-  const fetchComplaints = async () => {
-    try {
-      setLoading(true);
-      const res = await api.getComplaints({
-        skip: page * limit,
-        limit,
-        search: search.trim() || undefined,
-        severity: severityFilter || undefined,
-        status: statusFilter || undefined,
-      });
-      setComplaints(res.items);
-      setTotal(res.total);
-    } catch (err) {
-      console.error('Failed to fetch complaints', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const { data, isFetching, refetch } = useGetComplaintsQuery({ skip: page * limit, limit, ...filters, refreshTrigger });
 
   useEffect(() => {
-    fetchComplaints();
-  }, [page, severityFilter, statusFilter, onRefreshTrigger]);
+    if (data) dispatch(setComplaints({ items: data.items, total: data.total }));
+    setLoading(isFetching);
+  }, [data, dispatch, isFetching]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setPage(0);
-    fetchComplaints();
+    dispatch(setPage(0));
   };
 
   const totalPages = Math.ceil(total / limit);
@@ -67,8 +38,8 @@ export const ComplaintsList: React.FC<ComplaintsListProps> = ({
           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            value={filters.search}
+            onChange={(e) => dispatch(setFilter({ field: 'search', value: e.target.value }))}
             placeholder="Search by product, batch number, customer, defect..."
             className="w-full pl-9 pr-4 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition-all"
           />
@@ -79,10 +50,9 @@ export const ComplaintsList: React.FC<ComplaintsListProps> = ({
           <div className="flex items-center space-x-1.5">
             <span className="text-xs text-slate-500 font-medium">Severity:</span>
             <select
-              value={severityFilter}
+              value={filters.severity}
               onChange={(e) => {
-                setSeverityFilter(e.target.value);
-                setPage(0);
+                dispatch(setFilter({ field: 'severity', value: e.target.value }));
               }}
               className="px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs font-medium text-slate-700 outline-none focus:border-blue-500"
             >
@@ -97,10 +67,9 @@ export const ComplaintsList: React.FC<ComplaintsListProps> = ({
           <div className="flex items-center space-x-1.5">
             <span className="text-xs text-slate-500 font-medium">Status:</span>
             <select
-              value={statusFilter}
+              value={filters.status}
               onChange={(e) => {
-                setStatusFilter(e.target.value);
-                setPage(0);
+                dispatch(setFilter({ field: 'status', value: e.target.value }));
               }}
               className="px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs font-medium text-slate-700 outline-none focus:border-blue-500"
             >
@@ -113,7 +82,7 @@ export const ComplaintsList: React.FC<ComplaintsListProps> = ({
 
           {/* Refresh Button */}
           <button
-            onClick={fetchComplaints}
+            onClick={refetch}
             className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 transition-colors cursor-pointer"
             title="Refresh List"
           >
@@ -165,7 +134,7 @@ export const ComplaintsList: React.FC<ComplaintsListProps> = ({
                   return (
                     <tr
                       key={c.id}
-                      onClick={() => onSelectComplaint(c)}
+                      onClick={() => dispatch(setSelectedComplaint(c))}
                       className="hover:bg-blue-50/40 transition-colors cursor-pointer group"
                     >
                       {/* Tracking Number */}
@@ -229,7 +198,7 @@ export const ComplaintsList: React.FC<ComplaintsListProps> = ({
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            onSelectComplaint(c);
+                            dispatch(setSelectedComplaint(c));
                           }}
                           className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-blue-100 text-slate-700 hover:text-blue-700 font-medium transition-colors"
                         >
@@ -253,7 +222,7 @@ export const ComplaintsList: React.FC<ComplaintsListProps> = ({
             </span>
             <div className="flex items-center space-x-1.5">
               <button
-                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                onClick={() => dispatch(setPage(Math.max(0, page - 1)))}
                 disabled={page === 0}
                 className="p-1.5 rounded-lg border border-slate-200 disabled:opacity-40 hover:bg-white text-slate-700"
               >
@@ -263,7 +232,7 @@ export const ComplaintsList: React.FC<ComplaintsListProps> = ({
                 Page {page + 1} of {totalPages}
               </span>
               <button
-                onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                onClick={() => dispatch(setPage(Math.min(totalPages - 1, page + 1)))}
                 disabled={page >= totalPages - 1}
                 className="p-1.5 rounded-lg border border-slate-200 disabled:opacity-40 hover:bg-white text-slate-700"
               >

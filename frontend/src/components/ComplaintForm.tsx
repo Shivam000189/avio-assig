@@ -5,76 +5,65 @@ import {
   Save,
   Sparkles,
 } from 'lucide-react';
-import type { AnalysisResponse } from '../api/types';
+import { useAppDispatch, useAppSelector } from '../store/hooks';
+import { updateFormField, resetComplaintForm, setSaving, populateFromAnalysis } from '../store/slices/complaintFormSlice';
+import { incrementRefreshTrigger } from '../store/slices/complaintsSlice';
+import { setToastMessage } from '../store/slices/uiSlice';
+import { useCreateComplaintMutation, useSaveFromAnalysisMutation } from '../store/api/complaintsApi';
+import type { ComplaintFormData } from '../store/slices/complaintFormSlice';
 
-export interface ComplaintFormData {
-  complaintSource: string;
-  customerName: string;
-  productName: string;
-  productStrength: string;
-  batchNumber: string;
-  manufactureDate: string;
-  expiryDate: string;
-  quantityAffected: string;
-  complaintType: string;
-  complaintDate: string;
-  description: string;
-  severity: string;
-  priority: string;
-  aiSummary?: string;
-  rootCause?: string;
-  capaRecommendation?: string;
-  capaActionType?: string;
-}
-
-interface ComplaintFormProps {
-  formData: ComplaintFormData;
-  setFormData: React.Dispatch<React.SetStateAction<ComplaintFormData>>;
-  analysisData: AnalysisResponse | null;
-  onSave: () => Promise<void>;
-  onReset: () => void;
-  isSaving: boolean;
-}
-
-export const ComplaintForm: React.FC<ComplaintFormProps> = ({
-  formData,
-  setFormData,
-  analysisData,
-  onSave,
-  onReset,
-  isSaving,
-}) => {
+export const ComplaintForm: React.FC = () => {
+  const dispatch = useAppDispatch();
+  const { formData, analysisData, isSaving } = useAppSelector((state) => state.complaintForm);
+  const [createComplaint] = useCreateComplaintMutation();
+  const [saveFromAnalysis] = useSaveFromAnalysisMutation();
   const [showAiInsights, setShowAiInsights] = useState(true);
 
   // Auto-populate when analysis data updates
   useEffect(() => {
     if (analysisData?.extracted) {
-      const ext = analysisData.extracted as any;
-      setFormData((prev) => ({
-        ...prev,
-        complaintSource: analysisData.source || prev.complaintSource || 'PDF',
-        customerName: ext.complainantName || prev.customerName || '',
-        productName: ext.productName || prev.productName || '',
-        productStrength: ext.country || prev.productStrength || '',
-        batchNumber: ext.batchNumber || prev.batchNumber || '',
-        manufactureDate: ext.manufactureDate ? ext.manufactureDate.split('T')[0] : prev.manufactureDate,
-        expiryDate: ext.expiryDate ? ext.expiryDate.split('T')[0] : prev.expiryDate,
-        complaintType: ext.complaintType || prev.complaintType || 'QualityDefect',
-        description: ext.description || prev.description || '',
-        severity: analysisData.severity || prev.severity || 'Major',
-        aiSummary: analysisData.summary || prev.aiSummary || '',
-        rootCause: analysisData.rootCause || prev.rootCause || '',
-        capaRecommendation: analysisData.capaRecommendation || prev.capaRecommendation || '',
-        capaActionType: analysisData.capaActionType || prev.capaActionType || 'Corrective',
-      }));
+      dispatch(populateFromAnalysis(analysisData));
     }
-  }, [analysisData, setFormData]);
+  }, [analysisData, dispatch]);
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
   ) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    dispatch(updateFormField({ field: name as keyof ComplaintFormData, value }));
+  };
+
+  const handleSave = async () => {
+    if (!formData.customerName || !formData.productName || !formData.batchNumber || !formData.description) {
+      dispatch(setToastMessage({ text: 'Please fill in required fields: Customer Name, Product, Batch, and Description.', type: 'error' }));
+      return;
+    }
+    dispatch(setSaving(true));
+    try {
+      const dates = {
+        manufactureDate: formData.manufactureDate ? `${formData.manufactureDate}T00:00:00Z` : undefined,
+        expiryDate: formData.expiryDate ? `${formData.expiryDate}T00:00:00Z` : undefined,
+      };
+      const saved = analysisData?.extracted
+        ? await saveFromAnalysis({
+            extracted: { complainantName: formData.customerName, productName: formData.productName, batchNumber: formData.batchNumber, description: formData.description, complaintType: formData.complaintType || 'QualityDefect', country: formData.productStrength || undefined, ...dates },
+            severity: formData.severity || undefined,
+            summary: formData.aiSummary || analysisData.summary || undefined,
+            capaRecommendation: formData.capaRecommendation || analysisData.capaRecommendation || undefined,
+            capaActionType: formData.capaActionType || analysisData.capaActionType || 'Corrective',
+            rootCause: formData.rootCause || analysisData.rootCause || undefined,
+            source: formData.complaintSource || analysisData.source || 'Manual',
+            status: formData.priority || 'Open',
+          }).unwrap()
+        : await createComplaint({ complainantName: formData.customerName, productName: formData.productName, batchNumber: formData.batchNumber, description: formData.description, complaintType: formData.complaintType || 'QualityDefect', severity: formData.severity || undefined, source: formData.complaintSource || 'Manual', status: formData.priority || 'Open', country: formData.productStrength || undefined, ...dates }).unwrap();
+      dispatch(setToastMessage({ text: `Complaint [${saved.complaintNumber}] saved successfully!`, type: 'success' }));
+      dispatch(resetComplaintForm());
+      dispatch(incrementRefreshTrigger());
+    } catch (error) {
+      dispatch(setToastMessage({ text: getErrorMessage(error), type: 'error' }));
+    } finally {
+      dispatch(setSaving(false));
+    }
   };
 
   const placeholderText = 'Awaiting AI extraction...';
@@ -127,7 +116,7 @@ export const ComplaintForm: React.FC<ComplaintFormProps> = ({
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          onSave();
+          handleSave();
         }}
         className="p-6 sm:p-8 space-y-7 flex-1 overflow-y-auto"
       >
@@ -429,7 +418,7 @@ export const ComplaintForm: React.FC<ComplaintFormProps> = ({
         <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
           <button
             type="button"
-            onClick={onReset}
+            onClick={() => dispatch(resetComplaintForm())}
             className="flex items-center space-x-2 px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 text-xs font-semibold hover:bg-slate-50 transition-colors shadow-2xs cursor-pointer"
           >
             <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
@@ -453,3 +442,11 @@ export const ComplaintForm: React.FC<ComplaintFormProps> = ({
     </div>
   );
 };
+
+function getErrorMessage(error: unknown): string {
+  if (typeof error === 'object' && error !== null && 'data' in error) {
+    const data = (error as { data?: { detail?: string; message?: string } }).data;
+    return data?.detail || data?.message || 'Failed to save complaint.';
+  }
+  return 'Failed to save complaint.';
+}
