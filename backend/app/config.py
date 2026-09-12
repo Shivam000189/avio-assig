@@ -38,7 +38,10 @@ class Settings(BaseSettings):
     rate_limit_uploads: str = "20/minute"
     rate_limit_auth: str = "5/minute"
 
-    cors_origins: list[str] = ["http://localhost:5173"]
+    cors_origins: list[str] = [
+        "http://localhost:5173",
+        "https://complaint-cyan.vercel.app",
+    ]
 
     model_config = {
         "env_file": ".env",
