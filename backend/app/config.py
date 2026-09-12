@@ -4,7 +4,12 @@ Loads settings from environment variables and a .env file. A single `settings`
 instance is exported for use across the entire application.
 """
 
+import json
+from typing import Annotated, Any
+
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
+from pydantic_settings import NoDecode
 
 
 class Settings(BaseSettings):
@@ -38,10 +43,30 @@ class Settings(BaseSettings):
     rate_limit_uploads: str = "20/minute"
     rate_limit_auth: str = "5/minute"
 
-    cors_origins: list[str] = [
+    cors_origins: Annotated[list[str], NoDecode] = [
         "http://localhost:5173",
         "https://complaint-cyan.vercel.app",
     ]
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, value: Any) -> list[str]:
+        """Accept JSON arrays or comma-separated origins from deployment env vars."""
+        if isinstance(value, list):
+            return [str(origin).strip() for origin in value if str(origin).strip()]
+        if isinstance(value, str):
+            raw_value = value.strip()
+            if not raw_value:
+                return []
+            try:
+                decoded = json.loads(raw_value)
+            except json.JSONDecodeError:
+                decoded = raw_value.split(",")
+            if isinstance(decoded, list):
+                return [str(origin).strip() for origin in decoded if str(origin).strip()]
+            if isinstance(decoded, str):
+                return [decoded.strip()]
+        raise ValueError("CORS_ORIGINS must be a JSON array or comma-separated origins")
 
     model_config = {
         "env_file": ".env",
