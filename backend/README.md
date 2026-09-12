@@ -257,3 +257,14 @@ backend/
 - Authentication, authorization, and tenant isolation are out of scope for this assignment.
 - PDF ingestion extracts embedded text; production OCR for scanned/image-only documents is not implemented.
 - The application is designed as a single-tenant local/demo deployment and does not include background job workers for long-running analysis.
+
+## Render Deployment
+
+The repository pins Render to Python 3.11 in `.python-version`. Configure the Render web service with `backend` as its root directory:
+
+```text
+Build Command: pip install -r requirements.txt && python -m prisma generate --schema=prisma_schema/schema.prisma
+Start Command: uvicorn app.main:create_app --factory --host 0.0.0.0 --port $PORT
+```
+
+Set `DATABASE_URL`, `GROQ_API_KEY`, and `DEBUG=false` as Render environment variables. Use the Render PostgreSQL internal connection URL for `DATABASE_URL`.
