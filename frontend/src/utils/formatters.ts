@@ -39,28 +39,28 @@ export function getSeverityBadgeColor(severity?: string | null): {
   switch (severity?.toLowerCase()) {
     case 'critical':
       return {
-        bg: 'bg-red-50 dark:bg-red-950/40',
+        bg: 'bg-transparent',
         text: 'text-red-700 dark:text-red-400',
         border: 'border-red-200 dark:border-red-800',
         dot: 'bg-red-500',
       };
     case 'major':
       return {
-        bg: 'bg-amber-50 dark:bg-amber-950/40',
+        bg: 'bg-transparent',
         text: 'text-amber-700 dark:text-amber-400',
         border: 'border-amber-200 dark:border-amber-800',
         dot: 'bg-amber-500',
       };
     case 'minor':
       return {
-        bg: 'bg-blue-50 dark:bg-blue-950/40',
+        bg: 'bg-transparent',
         text: 'text-blue-700 dark:text-blue-400',
         border: 'border-blue-200 dark:border-blue-800',
         dot: 'bg-blue-500',
       };
     default:
       return {
-        bg: 'bg-slate-100 dark:bg-slate-800',
+        bg: 'bg-transparent',
         text: 'text-slate-600 dark:text-slate-400',
         border: 'border-slate-200 dark:border-slate-700',
         dot: 'bg-slate-400',
