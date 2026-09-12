@@ -13,6 +13,7 @@ from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from prisma.engine.errors import NotConnectedError
 
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -29,6 +30,18 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+
+def _cors_error_headers(request: Request) -> dict[str, str]:
+    """Keep CORS visible when an exception response is created by middleware."""
+    origin = request.headers.get("origin")
+    if origin and origin in settings.cors_origins:
+        return {
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Credentials": "true",
+            "Vary": "Origin",
+        }
+    return {}
 
 
 @asynccontextmanager
@@ -136,11 +149,22 @@ def create_app() -> FastAPI:
             request.method,
             request.url.path,
         )
+        if isinstance(exc, NotConnectedError):
+            return JSONResponse(
+                content={
+                    "detail": "Database service is currently unavailable.",
+                    "error": "database_unavailable",
+                },
+                headers=_cors_error_headers(request),
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
         return JSONResponse(
             content={
                 "detail": "An internal server error occurred. Please contact the system administrator.",
                 "error": "internal_server_error",
             },
+            headers=_cors_error_headers(request),
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
@@ -159,11 +183,22 @@ def create_app() -> FastAPI:
                 elapsed_ms,
                 exc,
             )
+            if isinstance(exc, NotConnectedError):
+                return JSONResponse(
+                    content={
+                        "detail": "Database service is currently unavailable.",
+                        "error": "database_unavailable",
+                    },
+                    headers=_cors_error_headers(request),
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                )
+
             return JSONResponse(
                 content={
                     "detail": "An internal server error occurred. Please contact the system administrator.",
                     "error": "internal_server_error",
                 },
+                headers=_cors_error_headers(request),
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
