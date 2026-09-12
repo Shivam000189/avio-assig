@@ -1,0 +1,60 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Environment variables & Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.pfx
+*.p12
+credentials.json
+secrets.json
+service_account.json
+
+# Testing & Coverage
+.pytest_cache/
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+
+# IDE & Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Prisma & DB dumps
+.prisma/
+prisma/client/
+*.sqlite
+*.sqlite3
+*.db
+*.sql
+*.dump
+
+# Node (future frontend)
+node_modules/
+dist/
+build/
+.next/
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db

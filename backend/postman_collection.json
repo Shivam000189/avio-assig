@@ -1,0 +1,273 @@
+{
+  "info": {
+    "_postman_id": "8f3b6140-5e20-4a88-8cf9-1d48b71d9999",
+    "name": "Pharmaceutical Complaint Management System (QMS) API",
+    "description": "Production CRUD and Analytical API with LangGraph AI Triage Pipeline for Pharmaceutical Complaint Quality Management System compliant with FDA 21 CFR Part 820.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "complaint_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "seed_cmp_1",
+      "value": "CMP-2026-0001",
+      "type": "string"
+    },
+    {
+      "key": "seed_cmp_2",
+      "value": "CMP-2026-0002",
+      "type": "string"
+    },
+    {
+      "key": "seed_cmp_3",
+      "value": "CMP-2026-0003",
+      "type": "string"
+    },
+    {
+      "key": "seed_cmp_4",
+      "value": "CMP-2026-0004",
+      "type": "string"
+    },
+    {
+      "key": "seed_cmp_5",
+      "value": "CMP-2026-0005",
+      "type": "string"
+    },
+    {
+      "key": "seed_cmp_6",
+      "value": "CMP-2026-0006",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "AI Analysis Engine",
+      "item": [
+        {
+          "name": "Analyze Complaint Text (LangGraph Pipeline)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"URGENT SAFETY NOTIFICATION: Clinical Adverse Reaction Report\\nReporter: Dr. Sarah Lin, MD (Attending Physician, Oakridge Emergency Clinic)\\nEmail: s.lin@oakridge-health.org | Phone: +1-555-018-7744\\nCountry: United States\\nProduct Administered: Amoxicillin 250mg Capsules\\nBatch Number: AX-2209-B\\nExpiry Date: 2027-08-30\\n\\nDescription of Incident:\\nA 34-year-old female patient presented to the emergency department approximately 45 minutes following oral ingestion of the first dose of Amoxicillin 250mg Capsules (Batch: AX-2209-B). The patient developed acute cutaneous erythema, facial angioedema, respiratory wheezing (stridor), and profound hypotension (BP 82/50 mmHg). Emergency intervention required immediate intramuscular epinephrine (0.3mg), IV methylprednisolone, and continuous oxygen therapy. Patient was stabilized in the acute trauma bay and subsequently admitted to the intensive care unit for 24-hour hemodynamic monitoring.\",\n  \"source\": \"Email\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/complaints/analyze",
+              "host": ["{{base_url}}"],
+              "path": ["complaints", "analyze"]
+            },
+            "description": "Execute the 6-node LangGraph sequential pipeline (extract -> completeness -> risk_assess -> summarize -> capa -> root_cause) on unstructured complaint text."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Health & Analytics",
+      "item": [
+        {
+          "name": "System Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": ["{{base_url}}"],
+              "path": ["health"]
+            },
+            "description": "Check overall API operational status."
+          }
+        },
+        {
+          "name": "Database Ping",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health/db",
+              "host": ["{{base_url}}"],
+              "path": ["health", "db"]
+            },
+            "description": "Verify live PostgreSQL database connectivity."
+          }
+        },
+        {
+          "name": "Complaint Statistics & Metrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/complaints/stats",
+              "host": ["{{base_url}}"],
+              "path": ["complaints", "stats"]
+            },
+            "description": "Retrieve aggregate metrics grouped by status, severity, and open complaint types."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Complaints",
+      "item": [
+        {
+          "name": "List Paginated Complaints",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/complaints?skip=0&limit=20&status=Open&severity=Critical",
+              "host": ["{{base_url}}"],
+              "path": ["complaints"],
+              "query": [
+                { "key": "skip", "value": "0" },
+                { "key": "limit", "value": "20" },
+                { "key": "status", "value": "Open" },
+                { "key": "severity", "value": "Critical" }
+              ]
+            },
+            "description": "Filter and paginate customer complaints."
+          }
+        },
+        {
+          "name": "Search Complaints (Free Text)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/complaints?search=Paracetamol",
+              "host": ["{{base_url}}"],
+              "path": ["complaints"],
+              "query": [
+                { "key": "search", "value": "Paracetamol" }
+              ]
+            },
+            "description": "Case-insensitive substring search across product name, batch number, complainant, and description."
+          }
+        },
+        {
+          "name": "Create Complaint (Intake)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"complainantName\": \"Mercy General Hospital Pharmacy\",\n  \"email\": \"pharmacy.intake@mercy-general.org\",\n  \"phone\": \"+1-555-012-4488\",\n  \"productName\": \"Paracetamol 500mg Tablets\",\n  \"batchNumber\": \"PT-4471-A\",\n  \"manufactureDate\": \"2025-01-15T00:00:00Z\",\n  \"expiryDate\": \"2027-12-31T00:00:00Z\",\n  \"complaintType\": \"QualityDefect\",\n  \"description\": \"Dispensing pharmacists noted significant discoloration and tablet crumbling in batch PT-4471-A blister strips.\",\n  \"severity\": \"Major\",\n  \"status\": \"Open\",\n  \"source\": \"Manual\",\n  \"country\": \"United States\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/complaints",
+              "host": ["{{base_url}}"],
+              "path": ["complaints"]
+            },
+            "description": "Submit a new customer complaint. Automatically assigns next sequential CMP-YYYY-NNNN tracking number."
+          }
+        },
+        {
+          "name": "Get Complaint by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/complaints/{{complaint_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["complaints", "{{complaint_id}}"]
+            },
+            "description": "Retrieve complete complaint record including documents, summary, and CAPA."
+          }
+        },
+        {
+          "name": "Update Complaint (Partial)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"InProgress\",\n  \"rootCause\": \"Tooling wear on rotary press punch heads causing mechanical shearing during compression.\",\n  \"aiSummary\": \"Quality defect investigation initiated for Paracetamol 500mg batch PT-4471-A.\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/complaints/{{complaint_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["complaints", "{{complaint_id}}"]
+            },
+            "description": "Update specific fields on a complaint with full audit trail logging."
+          }
+        },
+        {
+          "name": "Delete Complaint",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/complaints/{{complaint_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["complaints", "{{complaint_id}}"]
+            },
+            "description": "Cascade-delete complaint and all associated documents, summary, and CAPA records."
+          }
+        }
+      ]
+    },
+    {
+      "name": "CAPA (Corrective & Preventive Actions)",
+      "item": [
+        {
+          "name": "Get Complaint CAPA",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/complaints/{{complaint_id}}/capa",
+              "host": ["{{base_url}}"],
+              "path": ["complaints", "{{complaint_id}}", "capa"]
+            },
+            "description": "Fetch Corrective and Preventive Action plan for a complaint."
+          }
+        },
+        {
+          "name": "Upsert Complaint CAPA",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"actionType\": \"Corrective\",\n  \"recommendedAction\": \"Quarantine remaining inventory of batch PT-4471-A. Inspect and replace worn punch dies on Tableting Press #3.\",\n  \"actionOwner\": \"Dr. Aris Thorne (QA Operations)\",\n  \"dueDate\": \"2026-05-15T00:00:00Z\",\n  \"capaStatus\": \"InProgress\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/complaints/{{complaint_id}}/capa",
+              "host": ["{{base_url}}"],
+              "path": ["complaints", "{{complaint_id}}", "capa"]
+            },
+            "description": "Create or update the CAPA record tied to this complaint."
+          }
+        }
+      ]
+    }
+  ]
+}

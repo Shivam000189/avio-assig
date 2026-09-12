@@ -1,0 +1,29 @@
+# Core
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+pydantic-settings==2.7.1
+email-validator==2.2.0
+python-dotenv==1.0.1
+python-multipart>=0.0.20
+tenacity==9.1.4
+slowapi>=0.1.10
+
+# Document Parsing & Generation
+pypdf>=5.3.1
+reportlab==4.3.1
+
+# Database
+prisma==0.15.0
+
+# Testing & Security Audit
+pytest==8.3.4
+pytest-asyncio==0.25.0
+anyio==4.8.0
+httpx==0.28.1
+pip-audit>=2.10.1
+
+# AI (LangGraph & Groq)
+langchain==0.3.14
+langchain-groq==0.2.3
+langgraph==0.2.62

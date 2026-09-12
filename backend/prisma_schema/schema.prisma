@@ -1,0 +1,90 @@
+// Prisma schema for the AI-powered Pharmaceutical Customer Complaint Management System (QMS)
+//
+// ENUM-LIKE STRING FIELD VALUES (Single Source of Truth):
+// -----------------------------------------------------------------------------
+// - Severity:         "Critical", "Major", "Minor"
+// - ComplaintStatus:  "Open", "InProgress", "Closed"
+// - ComplaintType:    "AdverseEvent", "QualityDefect", "LabelingIssue", "PackagingIssue", "DeliveryIssue", "Other"
+// - ComplaintSource:  "Manual", "PDF", "Email"
+// - CapaStatus:       "Recommended", "InProgress", "Implemented", "Verified", "Closed"
+// - CapaActionType:   "Corrective", "Preventive"
+// - DocumentFileType: "pdf", "txt", "eml"
+// -----------------------------------------------------------------------------
+
+generator client {
+  provider             = "prisma-client-py"
+  interface            = "asyncio"
+  recursive_type_depth = 5
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Complaint {
+  id              String             @id @default(cuid())
+  complaintNumber String             @unique
+  complainantName String
+  email           String?
+  phone           String?
+  productName     String
+  batchNumber     String
+  expiryDate      DateTime?
+  manufactureDate DateTime?
+  complaintType   String
+  description     String
+  severity        String?
+  status          String             @default("Open")
+  source          String             @default("Manual")
+  country         String?
+  aiSummary       String?
+  rootCause       String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  // Relations
+  documents       ComplaintDocument[]
+  capa            CAPA?
+  summary         ComplaintSummary?
+
+  @@index([status])
+  @@index([severity])
+  @@index([batchNumber])
+  @@index([productName])
+}
+
+model ComplaintDocument {
+  id            String    @id @default(cuid())
+  complaintId   String
+  complaint     Complaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  filename      String
+  fileType      String
+  extractedText String?
+  uploadedAt    DateTime  @default(now())
+
+  @@index([complaintId])
+}
+
+model CAPA {
+  id                String    @id @default(cuid())
+  complaintId       String    @unique
+  complaint         Complaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  actionType        String
+  recommendedAction String
+  actionOwner       String?
+  dueDate           DateTime?
+  capaStatus        String    @default("Recommended")
+
+  @@index([complaintId])
+}
+
+model ComplaintSummary {
+  id          String    @id @default(cuid())
+  complaintId String    @unique
+  complaint   Complaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  summaryText String
+  generatedAt DateTime  @default(now())
+
+  @@index([complaintId])
+}
