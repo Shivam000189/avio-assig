@@ -205,7 +205,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
           <div className="mt-3.5 p-2.5 rounded-lg bg-emerald-50/70 border border-emerald-200/80 text-emerald-900 text-[11px] flex items-start space-x-2">
             <Info className="w-4 h-4 text-emerald-600 shrink-0 mt-0.2" />
             <div className="leading-tight">
-              <span className="font-semibold">Supported formats:</span> PDF, DOCX, TXT, EML
+              <span className="font-semibold">Supported formats:</span> PDF, TXT, EML
               <span className="block text-emerald-700 text-[10px] mt-0.5">Max file size: 10MB</span>
             </div>
           </div>

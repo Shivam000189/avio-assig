@@ -191,7 +191,7 @@ class ComplaintUpdate(BaseModel):
 
     @model_validator(mode="after")
     def validate_date_order(self) -> "ComplaintUpdate":
-        """Ensure expiryDate is strictly after manufactureDate when both are supplied."""
+        """Ensure supplied update dates are ordered when both are present."""
         if self.manufactureDate and self.expiryDate:
             if self.expiryDate <= self.manufactureDate:
                 raise ValueError("expiryDate must be chronologically after manufactureDate.")

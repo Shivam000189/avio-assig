@@ -276,6 +276,13 @@ async def update_complaint(
         full_existing = await get_complaint_by_id(complaint_id)
         return full_existing, []
 
+    existing_manufacture_date = _get_attr(existing, "manufactureDate")
+    existing_expiry_date = _get_attr(existing, "expiryDate")
+    manufacture_date = update_data.get("manufactureDate", existing_manufacture_date)
+    expiry_date = update_data.get("expiryDate", existing_expiry_date)
+    if manufacture_date and expiry_date and expiry_date <= manufacture_date:
+        raise ValueError("expiryDate must be chronologically after manufactureDate.")
+
     modified_fields = list(update_data.keys())
 
     updated = await prisma.complaint.update(

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   CheckCircle2,
   FileText,
@@ -21,12 +21,17 @@ export const ComplaintDetailModal: React.FC<ComplaintDetailModalProps> = ({
   onClose,
   onUpdate,
 }) => {
-  if (!complaint) return null;
-
-  const [current, setCurrent] = useState<Complaint>(complaint);
+  const [current, setCurrent] = useState<Complaint | null>(complaint);
   const [isRunningAi, setIsRunningAi] = useState(false);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [aiMessage, setAiMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    setCurrent(complaint);
+    setAiMessage(null);
+  }, [complaint]);
+
+  if (!current) return null;
 
   const sevStyle = getSeverityBadgeColor(current.severity);
   const statStyle = getStatusBadgeColor(current.status);

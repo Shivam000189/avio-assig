@@ -130,4 +130,4 @@ class CreateFromAnalysisRequest(BaseModel):
             raise ValueError(f"Invalid capaActionType '{value}'. Allowed values: {allowed}")
         return value
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="forbid")
