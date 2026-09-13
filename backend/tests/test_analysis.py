@@ -12,6 +12,8 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.agent.llm import MODEL_FAST, MODEL_REASONING
+from app.agent.llm import invoke_llm_with_retry
+from app.config import settings
 from app.exceptions import GroqUnavailableError
 from app.main import create_app
 
@@ -187,6 +189,20 @@ async def test_analyze_complaint_total_failure_returns_502() -> None:
     assert response.json()["detail"] == "AI service unavailable"
 
 
+@pytest.mark.anyio
+async def test_llm_invoke_uses_gemini_fallback_when_groq_fails() -> None:
+    """Groq failures should use Gemini before surfacing AI unavailability."""
+    mock_llm = MagicMock()
+    mock_llm.ainvoke = AsyncMock(side_effect=GroqUnavailableError("invalid Groq key"))
+
+    with patch("app.agent.llm._invoke_gemini_with_fallback", new_callable=AsyncMock) as mock_gemini:
+        mock_gemini.return_value = AIMessage(content='{"summary": "Gemini fallback worked"}')
+        result = await invoke_llm_with_retry(mock_llm, [])
+
+    assert result.content == '{"summary": "Gemini fallback worked"}'
+    mock_gemini.assert_awaited_once()
+
+
 # ==============================================================================
 # 4. MODEL ROUTING VERIFICATION TEST
 # ==============================================================================
@@ -242,7 +258,7 @@ async def test_model_routing_tiers_enforced() -> None:
 
 @pytest.mark.anyio
 async def test_complaint_chat_returns_grounded_response() -> None:
-    """The complaint chat endpoint returns the single Groq response."""
+    """The complaint chat endpoint returns the LLM response when Groq is available."""
     mock_llm = MagicMock()
     with (
         patch("app.routers.analysis.get_llm", return_value=mock_llm) as mock_get_llm,
@@ -257,6 +273,8 @@ async def test_complaint_chat_returns_grounded_response() -> None:
                     "message": "What is the current severity?",
                     "complaint_context": {
                         "severity": "Major",
+                        "riskReasoning": "Tablet friability affects dosage accuracy.",
+                        "recommendedSlaDays": 15,
                         "productName": "Paracetamol 500mg Tablets",
                     },
                 },
@@ -264,25 +282,32 @@ async def test_complaint_chat_returns_grounded_response() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"response": "The complaint is classified as Major."}
-    mock_get_llm.assert_called_once_with(model=MODEL_FAST, temperature=0.3)
+    mock_get_llm.assert_called_once_with(model=settings.groq_model_fast, temperature=0.3)
     mock_invoke.assert_awaited_once()
 
 
 @pytest.mark.anyio
-async def test_complaint_chat_returns_502_when_groq_unavailable() -> None:
-    """The complaint chat endpoint translates Groq outages to a clean 502."""
-    with (
-        patch("app.routers.analysis.get_llm", side_effect=GroqUnavailableError("offline")),
-    ):
+async def test_complaint_chat_falls_back_when_groq_unavailable() -> None:
+    """The complaint chat endpoint avoids a 502 by answering from local context."""
+    with patch("app.routers.analysis.get_llm", side_effect=GroqUnavailableError("offline")):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.post(
                 "/api/v1/complaints/chat",
                 json={
-                    "message": "Summarize this complaint.",
-                    "complaint_context": {"summary": "Tablet chipping reported."},
+                    "message": "What is the current severity?",
+                    "complaint_context": {
+                        "severity": "Major",
+                        "riskReasoning": "Tablet friability affects dosage accuracy.",
+                        "recommendedSlaDays": 15,
+                    },
                 },
             )
 
-    assert response.status_code == 502
-    assert response.json()["detail"] == "AI service unavailable"
+    assert response.status_code == 200
+    assert response.json() == {
+        "response": (
+            "Severity is Major. Reasoning: Tablet friability affects dosage accuracy. "
+            "Recommended SLA is 15 days."
+        )
+    }

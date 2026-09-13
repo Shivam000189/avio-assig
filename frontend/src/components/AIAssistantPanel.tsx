@@ -12,12 +12,13 @@ import {
 import { useAppDispatch, useAppSelector } from '../store/hooks';
 import { resetComplaintForm, setAnalysisData, setAnalyzing, setProgress, setUploadedFileName } from '../store/slices/complaintFormSlice';
 import { setPasteModalOpen, setToastMessage } from '../store/slices/uiSlice';
-import { useAnalyzeFileMutation, useChatMutation } from '../store/api/complaintsApi';
+import { useAnalyzeFileMutation, useAnalyzeTextMutation, useChatMutation } from '../store/api/complaintsApi';
 
 export const AIAssistantPanel: React.FC = () => {
   const dispatch = useAppDispatch();
   const { analysisData, isAnalyzing, progressPercent, progressStepText, uploadedFileName } = useAppSelector((state) => state.complaintForm);
   const [analyzeFile] = useAnalyzeFileMutation();
+  const [analyzeText] = useAnalyzeTextMutation();
   const [chat] = useChatMutation();
   const [isDragOver, setIsDragOver] = useState(false);
   const [chatInput, setChatInput] = useState('');
@@ -94,6 +95,43 @@ export const AIAssistantPanel: React.FC = () => {
     setChatMessages((prev) => [...prev, { sender: 'user', text: userText }]);
     setChatInput('');
 
+    if (!analysisData && looksLikeComplaintNarrative(userText)) {
+      dispatch(setAnalyzing(true));
+      dispatch(setUploadedFileName('Chat Narrative'));
+      const cancelAnimation = runProgressAnimation();
+
+      void analyzeText({ text: userText, source: 'Manual' })
+        .unwrap()
+        .then((analysis) => {
+          cancelAnimation();
+          dispatch(setProgress({ percent: 100, text: 'Analysis complete. Form populated successfully.' }));
+          dispatch(setAnalysisData(analysis));
+          dispatch(setToastMessage({ text: 'Complaint details extracted from chat message.', type: 'success' }));
+          setChatMessages((prev) => [
+            ...prev,
+            {
+              sender: 'bot',
+              text: analysis.extracted
+                ? 'I extracted the complaint details and filled the form. Please review the fields before saving.'
+                : 'I analyzed the message, but could not extract enough structured complaint details. Please include product, batch, complainant, and incident description.',
+            },
+          ]);
+        })
+        .catch((error) => {
+          cancelAnimation();
+          dispatch(setProgress({ percent: 0, text: '' }));
+          setChatMessages((prev) => [
+            ...prev,
+            {
+              sender: 'bot',
+              text: getErrorMessage(error, 'I could not extract complaint details from that message. Please check the backend and try again.'),
+            },
+          ]);
+        })
+        .finally(() => dispatch(setAnalyzing(false)));
+      return;
+    }
+
     void chat({
       message: userText,
       complaintContext: analysisData || {
@@ -105,10 +143,10 @@ export const AIAssistantPanel: React.FC = () => {
         duplicateChecked: false,
         warnings: [],
       },
-    })
+      })
       .unwrap()
       .then(({ response }) => setChatMessages((prev) => [...prev, { sender: 'bot', text: response }]))
-      .catch((error) => setChatMessages((prev) => [...prev, { sender: 'bot', text: getErrorMessage(error, 'I could not reach the AI assistant. Please verify the backend and GROQ_API_KEY.') }]));
+      .catch((error) => setChatMessages((prev) => [...prev, { sender: 'bot', text: getErrorMessage(error, 'I could not reach the complaint assistant. Please verify the backend is running.') }]));
   };
 
   return (
@@ -297,6 +335,33 @@ export const AIAssistantPanel: React.FC = () => {
     </div>
   );
 };
+
+function looksLikeComplaintNarrative(text: string): boolean {
+  if (text.trim().length < 30) return false;
+
+  const normalized = text.toLowerCase();
+  const extractionTerms = [
+    'adverse',
+    'batch',
+    'capsule',
+    'complainant',
+    'complaint',
+    'create complaint',
+    'defect',
+    'defective',
+    'expiry',
+    'fill form',
+    'incident',
+    'log complaint',
+    'lot',
+    'manufactured',
+    'patient',
+    'product',
+    'tablet',
+  ];
+
+  return extractionTerms.some((term) => normalized.includes(term));
+}
 
 function getErrorMessage(error: unknown, fallback: string): string {
   if (typeof error === 'object' && error !== null && 'data' in error) {

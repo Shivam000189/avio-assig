@@ -32,6 +32,7 @@ class Settings(BaseSettings):
 
     # Gemini Optional Fallback
     gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.0-flash"
 
     # Document Upload Limits
     max_upload_mb: int = 10
@@ -47,6 +48,20 @@ class Settings(BaseSettings):
         "http://localhost:5173",
         "https://complaint-cyan.vercel.app",
     ]
+
+    @field_validator("debug", mode="before")
+    @classmethod
+    def parse_debug(cls, value: Any) -> bool:
+        """Accept common environment mode strings for the boolean debug flag."""
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"true", "1", "yes", "on", "debug", "development", "dev"}:
+                return True
+            if normalized in {"false", "0", "no", "off", "release", "production", "prod"}:
+                return False
+        return bool(value)
 
     @field_validator("cors_origins", mode="before")
     @classmethod

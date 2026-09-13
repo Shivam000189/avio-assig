@@ -118,7 +118,7 @@ async def require_db_connection() -> None:
     response_model=ComplaintChatResponse,
     status_code=status.HTTP_200_OK,
     summary="Ask the complaint AI assistant",
-    description="Answer a question using the supplied complaint or analysis context with a single grounded Groq call.",
+    description="Answer a question using the supplied complaint or analysis context, falling back to local context when the AI service is unavailable.",
 )
 @limiter.limit(lambda: settings.rate_limit_ai_analysis)
 async def chat_about_complaint(
@@ -135,7 +135,7 @@ async def chat_about_complaint(
         f"Complaint context:\n{json.dumps(payload.complaint_context, indent=2, default=str)}"
     )
     try:
-        llm = get_llm(model=settings.groq_model_fast, temperature=0.3)
+        llm = get_llm(model=settings.groq_model_fast or MODEL_FAST, temperature=0.3)
         result = await invoke_llm_with_retry(
             llm,
             [
@@ -143,18 +143,136 @@ async def chat_about_complaint(
                 HumanMessage(content=payload.message),
             ],
         )
+        response_text = getattr(result, "content", str(result)).strip()
+        if response_text:
+            return ComplaintChatResponse(response=response_text)
     except GroqUnavailableError as exc:
-        logger.error("AI chat service failure: %s", exc)
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="AI service unavailable")
+        logger.warning("AI chat service unavailable; using local context fallback: %s", exc)
     except Exception as exc:
-        logger.exception("Unexpected AI chat failure: %s", exc)
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="AI service unavailable",
-        ) from exc
+        logger.exception("Unexpected AI chat failure; using local context fallback: %s", exc)
 
-    response_text = getattr(result, "content", str(result)).strip()
-    return ComplaintChatResponse(response=response_text)
+    return ComplaintChatResponse(
+        response=_answer_complaint_question(payload.message, payload.complaint_context)
+    )
+
+
+def _first_text_value(context: Mapping[str, Any], *paths: str) -> str | None:
+    """Return the first non-empty string-like value found at a dotted path."""
+    for path in paths:
+        current: Any = context
+        for part in path.split("."):
+            if not isinstance(current, Mapping) or part not in current:
+                current = None
+                break
+            current = current[part]
+
+        if current is not None and str(current).strip():
+            return str(current).strip()
+
+    return None
+
+
+def _answer_complaint_question(message: str, context: Mapping[str, Any]) -> str:
+    """Build a deterministic, context-grounded chat answer without an LLM call."""
+    question = message.lower()
+
+    product = _first_text_value(context, "extracted.productName", "productName")
+    batch = _first_text_value(context, "extracted.batchNumber", "batchNumber")
+    complaint_type = _first_text_value(context, "extracted.complaintType", "complaintType")
+    description = _first_text_value(context, "extracted.description", "description", "rawInput")
+    severity = _first_text_value(context, "severity")
+    risk_reasoning = _first_text_value(context, "riskReasoning")
+    sla_days = _first_text_value(context, "recommendedSlaDays")
+    summary = _first_text_value(context, "summary", "aiSummary", "summary.summaryText")
+    capa = _first_text_value(context, "capaRecommendation", "capa.recommendedAction")
+    capa_type = _first_text_value(context, "capaActionType", "capa.actionType")
+    capa_status = _first_text_value(context, "capa.capaStatus")
+    root_cause = _first_text_value(context, "rootCause")
+    duplicate = _first_text_value(context, "duplicateOf", "potentialDuplicate.complaintNumber")
+    duplicate_note = _first_text_value(context, "potentialDuplicate.explanation")
+    status_text = _first_text_value(context, "status")
+    source = _first_text_value(context, "source")
+    complainant = _first_text_value(context, "extracted.complainantName", "complainantName")
+    missing_fields = context.get("missingFields")
+
+    if any(term in question for term in ("severity", "risk", "priority", "sla")):
+        parts = []
+        if severity:
+            parts.append(f"Severity is {severity}.")
+        if risk_reasoning:
+            parts.append(f"Reasoning: {risk_reasoning}")
+        if sla_days:
+            parts.append(f"Recommended SLA is {sla_days} days.")
+        return " ".join(parts) if parts else "The complaint context does not include severity, risk reasoning, or SLA information yet."
+
+    if any(term in question for term in ("capa", "corrective", "preventive", "action")):
+        parts = []
+        if capa:
+            parts.append(f"Recommended CAPA: {capa}")
+        if capa_type:
+            parts.append(f"Action type: {capa_type}.")
+        if capa_status:
+            parts.append(f"CAPA status: {capa_status}.")
+        return " ".join(parts) if parts else "No CAPA recommendation is available in the current complaint context."
+
+    if any(term in question for term in ("root cause", "why", "cause", "investigation")):
+        if root_cause:
+            return f"Root-cause hypothesis: {root_cause}"
+        return "The complaint context does not include a root-cause hypothesis yet."
+
+    if any(term in question for term in ("duplicate", "similar", "trend")):
+        if duplicate:
+            answer = f"Potential duplicate or related complaint: {duplicate}."
+            return f"{answer} {duplicate_note}" if duplicate_note else answer
+        return "No duplicate complaint is identified in the current context."
+
+    if any(term in question for term in ("missing", "complete", "field")):
+        if isinstance(missing_fields, list):
+            return (
+                "Missing fields: " + ", ".join(str(field) for field in missing_fields)
+                if missing_fields
+                else "The complaint appears complete based on the current context."
+            )
+        return "The current context does not include completeness or missing-field information."
+
+    if any(term in question for term in ("product", "batch", "lot", "type")):
+        facts = []
+        if product:
+            facts.append(f"Product: {product}")
+        if batch:
+            facts.append(f"Batch/Lot: {batch}")
+        if complaint_type:
+            facts.append(f"Complaint type: {complaint_type}")
+        return "; ".join(facts) + "." if facts else "The product, batch, and complaint type are not available in the current context."
+
+    if any(term in question for term in ("status", "source", "who", "complainant")):
+        facts = []
+        if status_text:
+            facts.append(f"Status: {status_text}")
+        if source:
+            facts.append(f"Source: {source}")
+        if complainant:
+            facts.append(f"Complainant: {complainant}")
+        return "; ".join(facts) + "." if facts else "The status, source, and complainant are not available in the current context."
+
+    if summary:
+        return summary
+
+    overview = []
+    if product:
+        overview.append(f"product {product}")
+    if batch:
+        overview.append(f"batch {batch}")
+    if severity:
+        overview.append(f"severity {severity}")
+    if description:
+        overview.append(f"description: {description}")
+
+    return (
+        "Current complaint context includes " + "; ".join(overview) + "."
+        if overview
+        else "I do not have enough complaint context yet. Upload or paste complaint details first, then ask again."
+    )
 
 
 # ==============================================================================
@@ -183,7 +301,7 @@ async def analyze_raw_complaint(
         logger.error("AI service failure during /complaints/analyze: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="AI service unavailable",
+            detail=str(exc) if settings.debug else "AI service unavailable",
         )
     except Exception as exc:
         logger.exception("Unexpected analysis response failure: %s", exc)
@@ -297,7 +415,7 @@ async def analyze_complaint_file(
         logger.error("AI service failure during /complaints/analyze-file: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="AI service unavailable",
+            detail=str(exc) if settings.debug else "AI service unavailable",
         )
 
     graph_ms = (time.perf_counter() - graph_start) * 1000
@@ -415,7 +533,7 @@ async def generate_complaint_ai_insights(
         logger.error("AI service failure during /complaints/%s/ai-insights: %s", complaint_id, exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="AI service unavailable",
+            detail=str(exc) if settings.debug else "AI service unavailable",
         )
 
     # Partial failure logging
