@@ -34,7 +34,7 @@ def get_llm(
     """Instantiate a ChatGroq LLM client instance.
 
     Args:
-        model: Target Groq model identifier (e.g. gemma2-9b-it or llama-3.3-70b-versatile).
+        model: Target Groq model identifier.
         temperature: Sampling temperature (0.0 for deterministic extraction, 0.2-0.3 for reasoning).
         max_tokens: Maximum response tokens allowed.
 

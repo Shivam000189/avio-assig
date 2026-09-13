@@ -17,7 +17,7 @@ import logging
 import json
 import os
 import time
-from typing import Annotated
+from typing import Annotated, Any, Mapping
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -63,6 +63,42 @@ router = APIRouter(prefix="/complaints", tags=["AI Analysis Engine"])
 ALLOWED_EXTENSIONS = {".pdf", ".txt", ".eml"}
 
 
+def _analysis_response(state: Mapping[str, Any]) -> AnalysisResponse:
+    """Build a response from degraded or fully populated graph state safely."""
+    potential_duplicate = state.get("potential_duplicate")
+    potential_dup_model = (
+        PotentialDuplicateInfo.model_validate(potential_duplicate)
+        if isinstance(potential_duplicate, dict)
+        else None
+    )
+    recommended_sla_days = state.get("recommended_sla_days")
+    if isinstance(recommended_sla_days, str):
+        try:
+            recommended_sla_days = int(recommended_sla_days)
+        except ValueError:
+            recommended_sla_days = None
+
+    return AnalysisResponse(
+        rawInput=str(state.get("raw_input", "")),
+        source=str(state.get("source", "Manual")),
+        extracted=state.get("extracted"),
+        missingFields=state.get("missing_fields") or [],
+        isComplete=bool(state.get("is_complete", False)),
+        summary=state.get("summary"),
+        severity=state.get("severity"),
+        riskReasoning=state.get("risk_reasoning"),
+        recommendedSlaDays=recommended_sla_days,
+        capaRecommendation=state.get("capa_recommendation"),
+        capaActionType=state.get("capa_action_type"),
+        rootCause=state.get("root_cause"),
+        duplicateOf=state.get("duplicate_of"),
+        potentialDuplicate=potential_dup_model,
+        duplicateChecked=bool(state.get("duplicate_checked", False)),
+        warnings=state.get("llm_errors") or [],
+        document=None,
+    )
+
+
 async def require_db_connection() -> None:
     """FastAPI dependency to verify database connectivity.
 
@@ -99,7 +135,7 @@ async def chat_about_complaint(
         f"Complaint context:\n{json.dumps(payload.complaint_context, indent=2, default=str)}"
     )
     try:
-        llm = get_llm(model=MODEL_FAST, temperature=0.3)
+        llm = get_llm(model=settings.groq_model_fast, temperature=0.3)
         result = await invoke_llm_with_retry(
             llm,
             [
@@ -110,6 +146,12 @@ async def chat_about_complaint(
     except GroqUnavailableError as exc:
         logger.error("AI chat service failure: %s", exc)
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="AI service unavailable")
+    except Exception as exc:
+        logger.exception("Unexpected AI chat failure: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="AI service unavailable",
+        ) from exc
 
     response_text = getattr(result, "content", str(result)).strip()
     return ComplaintChatResponse(response=response_text)
@@ -136,36 +178,19 @@ async def analyze_raw_complaint(
     try:
         state = await analyze_complaint(raw_input=payload.text, source=payload.source)
 
-        pot_dup = state.get("potential_duplicate")
-        potential_dup_model = (
-            PotentialDuplicateInfo.model_validate(pot_dup) if pot_dup else None
-        )
-
-        return AnalysisResponse(
-            rawInput=state["raw_input"],
-            source=state["source"],
-            extracted=state.get("extracted"),
-            missingFields=state.get("missing_fields", []),
-            isComplete=state.get("is_complete", False),
-            summary=state.get("summary"),
-            severity=state.get("severity"),
-            riskReasoning=state.get("risk_reasoning"),
-            recommendedSlaDays=state.get("recommended_sla_days"),
-            capaRecommendation=state.get("capa_recommendation"),
-            capaActionType=state.get("capa_action_type"),
-            rootCause=state.get("root_cause"),
-            duplicateOf=state.get("duplicate_of"),
-            potentialDuplicate=potential_dup_model,
-            duplicateChecked=state.get("duplicate_checked", False),
-            warnings=state.get("llm_errors", []),
-            document=None,
-        )
+        return _analysis_response(state)
     except GroqUnavailableError as exc:
         logger.error("AI service failure during /complaints/analyze: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="AI service unavailable",
         )
+    except Exception as exc:
+        logger.exception("Unexpected analysis response failure: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="AI analysis could not process this complaint",
+        ) from exc
 
 
 # ==============================================================================
